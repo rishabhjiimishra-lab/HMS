@@ -83,6 +83,85 @@ def test_doctor_cannot_register_patients(client: TestClient) -> None:
     assert response.status_code == 403
 
 
+def test_admin_can_create_deactivate_and_reactivate_doctor(
+    client: TestClient, admin_headers: dict[str, str]
+) -> None:
+    created = client.post(
+        "/api/doctors",
+        headers=admin_headers,
+        json={
+            "username": "dr.morgan",
+            "password": "doctor-password-2026",
+            "full_name": "Morgan Lee",
+            "department": "Cardiology",
+            "specialization": "Cardiology",
+            "consultation_fee": "500.00",
+            "availability_schedule": "Weekdays",
+        },
+    )
+    assert created.status_code == 201
+    doctor = created.json()
+    assert doctor["is_active"] is True
+    assert doctor["username"] == "dr.morgan"
+    assert "password" not in doctor
+
+    doctor_login = client.post(
+        "/api/auth/login",
+        json={"username": "dr.morgan", "password": "doctor-password-2026"},
+    )
+    assert doctor_login.status_code == 200
+    doctor_headers = {"Authorization": f"Bearer {doctor_login.json()['access_token']}"}
+
+    patient_response = client.post(
+        "/api/patients",
+        headers=admin_headers,
+        json={
+            "full_name": "Taylor Reed",
+            "age": 42,
+            "gender": "Other",
+            "contact": "5550101000",
+            "address": "100 Main Street",
+        },
+    )
+    appointment_payload = {
+        "patient_id": patient_response.json()["id"],
+        "doctor_id": doctor["id"],
+        "type": "OPD",
+        "appointment_datetime": "2030-01-01T10:00:00Z",
+    }
+    appointment = client.post("/api/appointments", headers=admin_headers, json=appointment_payload)
+    assert appointment.status_code == 201
+
+    deactivated = client.delete(f"/api/doctors/{doctor['id']}", headers=admin_headers)
+    assert deactivated.status_code == 204
+    assert client.get("/api/auth/me", headers=doctor_headers).status_code == 401
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "dr.morgan", "password": "doctor-password-2026"},
+    ).status_code == 401
+    assert any(
+        item["id"] == appointment.json()["id"]
+        for item in client.get("/api/appointments", headers=admin_headers).json()
+    )
+    assert client.post(
+        "/api/appointments",
+        headers=admin_headers,
+        json=appointment_payload,
+    ).status_code == 404
+
+    doctor_list = client.get("/api/doctors", headers=admin_headers)
+    assert doctor_list.status_code == 200
+    assert next(item for item in doctor_list.json() if item["id"] == doctor["id"])["is_active"] is False
+
+    reactivated = client.post(f"/api/doctors/{doctor['id']}/reactivate", headers=admin_headers)
+    assert reactivated.status_code == 200
+    assert reactivated.json()["is_active"] is True
+    assert client.post(
+        "/api/auth/login",
+        json={"username": "dr.morgan", "password": "doctor-password-2026"},
+    ).status_code == 200
+
+
 def test_discount_cannot_exceed_invoice_total(
     client: TestClient, admin_headers: dict[str, str]
 ) -> None:

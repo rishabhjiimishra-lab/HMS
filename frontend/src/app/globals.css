@@ -1234,6 +1234,15 @@ tr:hover td {
   box-shadow: none;
 }
 
+.doctor-availability-inactive {
+  color: #9a5750;
+  background: #fff8f6e8;
+}
+
+.doctor-availability-inactive i {
+  background: #bd6b60;
+}
+
 .doctor-info {
   padding: 15px 16px 14px;
 }
@@ -1298,6 +1307,29 @@ tr:hover td {
   color: #98a49e;
   font-size: 9px;
   line-height: 1.5;
+}
+
+.doctor-account {
+  margin: -7px 0 12px;
+  color: #829087;
+  font-size: 9px;
+}
+
+.doctor-account strong {
+  color: #49645d;
+}
+
+.doctor-action {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 13px;
+}
+
+.doctor-card-inactive {
+  opacity: .82;
 }
 
 .billing-summary {

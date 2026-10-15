@@ -76,6 +76,19 @@ export const api = {
     medical_history?: string;
   }) => request<Patient>("/patients", { method: "POST", body: JSON.stringify(payload) }),
   doctors: () => request<Doctor[]>("/doctors"),
+  createDoctor: (payload: {
+    username: string;
+    password: string;
+    full_name: string;
+    department: string;
+    specialization: string;
+    consultation_fee: number;
+    availability_schedule: string;
+  }) => request<Doctor>("/doctors", { method: "POST", body: JSON.stringify(payload) }),
+  deactivateDoctor: (id: number) =>
+    request<void>(`/doctors/${id}`, { method: "DELETE" }),
+  reactivateDoctor: (id: number) =>
+    request<Doctor>(`/doctors/${id}/reactivate`, { method: "POST" }),
   appointments: () => request<Appointment[]>("/appointments"),
   createAppointment: (payload: {
     patient_id: number;

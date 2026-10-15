@@ -143,7 +143,7 @@ Set-Location .\backend
 ..\.venv\Scripts\python.exe -m app.create_admin --username admin
 ```
 
-Enter a unique password of at least 12 characters at the hidden prompt. There is no public administrator-registration endpoint. Admins can add users using the API; administrators can create doctor accounts through the doctor endpoint. The login page itself does not contain demo credentials.
+Enter a unique password of at least 12 characters at the hidden prompt. There is no public administrator-registration endpoint. After signing in, an administrator can open **Care team** and choose **Add doctor** to create the doctor's username and initial password along with their profile. The administrator can deactivate or reactivate doctor accounts from the same screen. Deactivation prevents login and new appointments but preserves the doctor's profile and appointment history. The login page itself does not contain demo credentials.
 
 ### API route reference
 
@@ -156,8 +156,10 @@ All application endpoints are prefixed with `/api` and require `Authorization: B
 | `GET`, `POST` | `/api/users` | Admin | List/create staff accounts |
 | `GET`, `POST` | `/api/patients` | Any signed-in user for read; Admin/Receptionist for create | Search/list and register patients |
 | `GET`, `PATCH` | `/api/patients/{id}` | Any signed-in user for read; Admin/Receptionist for update | Patient record |
-| `GET`, `POST` | `/api/doctors` | Any signed-in user for read; Admin for create | Clinician directory and doctor account setup |
+| `GET`, `POST` | `/api/doctors` | Any signed-in user for active clinicians; Admin for create (Admin sees inactive too) | Clinician directory and doctor account setup |
 | `PATCH` | `/api/doctors/{id}` | Admin | Update clinician profile |
+| `DELETE` | `/api/doctors/{id}` | Admin | Deactivate account without deleting appointment history |
+| `POST` | `/api/doctors/{id}/reactivate` | Admin | Reactivate a doctor account |
 | `GET` | `/api/appointments` | Any signed-in user | List appointments; doctor accounts only receive their own |
 | `POST` | `/api/appointments` | Admin/Receptionist | Schedule OPD/IPD care |
 | `PATCH` | `/api/appointments/{id}` | Admin/Receptionist; Doctor for own status only | Update appointment/status |

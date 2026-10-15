@@ -18,9 +18,12 @@ import {
   ShieldCheck,
   Stethoscope,
   UsersRound,
+  UserMinus,
+  UserPlus,
+  UserCheck,
   X,
 } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, getToken, setToken } from "@/lib/api";
 import type { Appointment, Doctor, EncounterStatus, EncounterType, Gender, Invoice, Patient, PaymentStatus, User } from "@/lib/types";
 
@@ -49,13 +52,28 @@ export default function HMSApp() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<Toast | null>(null);
-  const [modal, setModal] = useState<"patient" | "appointment" | "invoice" | null>(null);
+  const [modal, setModal] = useState<"patient" | "appointment" | "invoice" | "doctor" | null>(null);
   const [search, setSearch] = useState("");
   const [mobileNav, setMobileNav] = useState(false);
+  const toastTimeout = useRef<number | null>(null);
 
   const notify = useCallback((message: string, kind: Toast["kind"] = "success") => {
+    if (toastTimeout.current !== null) window.clearTimeout(toastTimeout.current);
     setToast({ message, kind });
-    window.setTimeout(() => setToast(null), 3500);
+    toastTimeout.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimeout.current = null;
+    }, 4500);
+  }, []);
+
+  const dismissToast = useCallback(() => {
+    if (toastTimeout.current !== null) window.clearTimeout(toastTimeout.current);
+    toastTimeout.current = null;
+    setToast(null);
+  }, []);
+
+  useEffect(() => () => {
+    if (toastTimeout.current !== null) window.clearTimeout(toastTimeout.current);
   }, []);
 
   const loadWorkspace = useCallback(async (searchTerm = "") => {
@@ -102,7 +120,7 @@ export default function HMSApp() {
       const result = await api.login(String(form.get("username")), String(form.get("password")));
       setToken(result.access_token);
       setUser(result.user);
-      notify("Welcome to Radiant Hospitals");
+      notify(`Successfully logged in as ${result.user.username}`);
     } catch (error) {
       notify(error instanceof Error ? error.message : "Unable to sign in", "error");
     }
@@ -115,6 +133,7 @@ export default function HMSApp() {
     setAppointments([]);
     setDoctors([]);
     setInvoices([]);
+    notify("Successfully logged out");
   }
 
   async function refresh(message: string) {
@@ -123,8 +142,23 @@ export default function HMSApp() {
     notify(message);
   }
 
+  async function changeDoctorStatus(doctor: Doctor) {
+    if (doctor.is_active && !window.confirm(`Deactivate ${doctor.full_name}'s account? Their appointment history will be retained.`)) return;
+    try {
+      if (doctor.is_active) {
+        await api.deactivateDoctor(doctor.id);
+        await refresh("Doctor account deactivated");
+      } else {
+        await api.reactivateDoctor(doctor.id);
+        await refresh("Doctor account reactivated");
+      }
+    } catch (error) {
+      notify(error instanceof Error ? error.message : "Unable to update doctor account", "error");
+    }
+  }
+
   if (!authReady) return <div className="boot-screen"><span className="brand-mark"><Activity size={21} /></span><p>Loading secure workspace</p></div>;
-  if (!user) return <LoginScreen onSubmit={handleLogin} />;
+  if (!user) return <LoginScreen onSubmit={handleLogin} toast={toast} onDismissToast={dismissToast} />;
 
   const allowedNav = NAV_ITEMS.filter((item) => {
     if (item.id === "doctors") return user.role === "Admin" || user.role === "Receptionist";
@@ -150,11 +184,11 @@ export default function HMSApp() {
       <section className="main-column">
         <header className="topbar"><button className="icon-button mobile-menu" aria-label="Open navigation" onClick={() => setMobileNav(!mobileNav)}><Menu size={19} /></button><div className="breadcrumbs"><span>Radiant Hospitals</span><span className="crumb-divider">/</span><strong>{heading}</strong></div><div className="topbar-right"><span className="live-indicator"><i /> Operations live</span><span className="topbar-date">{new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short" }).format(new Date())}</span><span className="avatar avatar-small">{user.username.slice(0, 1).toUpperCase()}</span></div></header>
         <div className="content-area">
-          <div className="page-heading"><div><p className="eyebrow">RADIANT HOSPITALS <span>·</span> {user.role.toUpperCase()}</p><h1>{view === "overview" ? "Good care starts here." : heading}</h1><p className="page-subtitle">{view === "overview" ? "A clear view of today’s care operations." : pageDescription(view)}</p></div><div className="heading-actions"><button className="button button-quiet" onClick={() => void loadWorkspace(view === "patients" ? search : "")}><Activity size={16} className={loading ? "spin" : ""} /> Refresh</button>{(view === "overview" || view === "patients") && user.role !== "Doctor" && <button className="button button-primary" onClick={() => setModal("patient")}><Plus size={17} /> Register patient</button>}{view === "appointments" && user.role !== "Doctor" && <button className="button button-primary" onClick={() => setModal("appointment")}><Plus size={17} /> New appointment</button>}{view === "billing" && user.role !== "Doctor" && <button className="button button-primary" onClick={() => setModal("invoice")}><Plus size={17} /> Create invoice</button>}</div></div>
+          <div className="page-heading"><div><p className="eyebrow">RADIANT HOSPITALS <span>·</span> {user.role.toUpperCase()}</p><h1>{view === "overview" ? "Good care starts here." : heading}</h1><p className="page-subtitle">{view === "overview" ? "A clear view of today’s care operations." : pageDescription(view)}</p></div><div className="heading-actions"><button className="button button-quiet" onClick={() => void loadWorkspace(view === "patients" ? search : "")}><Activity size={16} className={loading ? "spin" : ""} /> Refresh</button>{(view === "overview" || view === "patients") && user.role !== "Doctor" && <button className="button button-primary" onClick={() => setModal("patient")}><Plus size={17} /> Register patient</button>}{view === "appointments" && user.role !== "Doctor" && <button className="button button-primary" onClick={() => setModal("appointment")}><Plus size={17} /> New appointment</button>}{view === "doctors" && user.role === "Admin" && <button className="button button-primary" onClick={() => setModal("doctor")}><UserPlus size={17} /> Add doctor</button>}{view === "billing" && user.role !== "Doctor" && <button className="button button-primary" onClick={() => setModal("invoice")}><Plus size={17} /> Create invoice</button>}</div></div>
           {view === "overview" && <Overview patients={patients} doctors={doctors} appointments={appointments} invoices={invoices} todayAppointments={todayAppointments} unpaidTotal={unpaidTotal} canCreateAppointment={user.role !== "Doctor"} onNavigate={setView} onCreateAppointment={() => setModal("appointment")} />}
 
           {view === "patients" && <PatientsView patients={patients} search={search} onSearch={setSearch} loading={loading} />}
-          {view === "doctors" && <DoctorsView doctors={doctors} appointments={appointments} />}
+          {view === "doctors" && <DoctorsView doctors={doctors} appointments={appointments} canManage={user.role === "Admin"} onChangeStatus={(doctor) => void changeDoctorStatus(doctor)} />}
           {view === "appointments" && <AppointmentsView appointments={appointments} onStatus={async (id, status) => { try { await api.updateAppointment(id, status); await refresh("Appointment updated"); } catch (error) { notify(error instanceof Error ? error.message : "Update failed", "error"); } }} />}
           {view === "billing" && <BillingView invoices={invoices} onStatus={async (id, status) => { try { await api.updateInvoice(id, status); await refresh("Invoice updated"); } catch (error) { notify(error instanceof Error ? error.message : "Update failed", "error"); } }} />}
           <footer className="page-footer"><span>Radiant Hospitals · Care with clarity</span><span>HMS <b>1.0</b></span></footer>
@@ -163,7 +197,7 @@ export default function HMSApp() {
 
       {mobileNav && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
       {modal && <Modal title={modalTitle(modal)} onClose={() => setModal(null)}><ModalForm kind={modal} patients={patients} doctors={doctors} onSaved={refresh} onError={(message) => notify(message, "error")} /></Modal>}
-      {toast && <div className={`toast toast-${toast.kind}`} role="status">{toast.kind === "success" ? <Check size={17} /> : <X size={17} />}<span>{toast.message}</span><button aria-label="Dismiss notification" onClick={() => setToast(null)}><X size={15} /></button></div>}
+      {toast && <ToastMessage toast={toast} onDismiss={dismissToast} />}
     </main>
   );
 }
@@ -172,8 +206,12 @@ function pageDescription(view: View) {
   return ({ patients: "Patient records, registration and clinical history.", appointments: "Coordinate OPD and IPD care across the hospital.", doctors: "Your clinical team and today’s appointment load.", billing: "Invoices, collections and outstanding balances.", overview: "A clear view of today’s care operations." })[view];
 }
 
-function LoginScreen({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
-  return <main className="login-screen"><section className="login-brand"><div className="brand-lockup brand-lockup-light"><span className="brand-mark"><Activity size={21} /></span><span><strong>radiant</strong><small>HOSPITALS</small></span></div><div className="login-quote"><span className="eyebrow">CARE OPERATIONS PLATFORM</span><h1>Better care,<br /><em>beautifully coordinated.</em></h1><p>One calm workspace for the people who make every patient feel seen.</p><div className="login-rule"><span /><small>RADIANT HOSPITALS · INDIA</small></div></div><div className="login-brand-foot">A CODEETERNITY PRIVATE LIMITED PRODUCT</div></section><section className="login-panel"><div className="login-form-wrap"><div className="login-icon"><ShieldCheck size={22} /></div><p className="eyebrow">SECURE STAFF ACCESS</p><h2>Welcome back</h2><p className="login-hint">Sign in with your hospital account to continue.</p><form onSubmit={onSubmit} className="form-stack"><label>Username<input name="username" autoComplete="username" required minLength={3} placeholder="Your username" /></label><label>Password<input name="password" type="password" autoComplete="current-password" required placeholder="Your password" /></label><button className="button button-primary button-full" type="submit">Sign in securely <ArrowUpRight size={16} /></button></form><p className="login-help">Need access? Contact your hospital administrator.</p></div><footer>Protected by role-based access controls <span>·</span> © 2026 Radiant Hospitals</footer></section></main>;
+function LoginScreen({ onSubmit, toast, onDismissToast }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void; toast: Toast | null; onDismissToast: () => void }) {
+  return <main className="login-screen"><section className="login-brand"><div className="brand-lockup brand-lockup-light"><span className="brand-mark"><Activity size={21} /></span><span><strong>radiant</strong><small>HOSPITALS</small></span></div><div className="login-quote"><span className="eyebrow">CARE OPERATIONS PLATFORM</span><h1>Better care,<br /><em>beautifully coordinated.</em></h1><p>One calm workspace for the people who make every patient feel seen.</p><div className="login-rule"><span /><small>RADIANT HOSPITALS · INDIA</small></div></div><div className="login-brand-foot">A CODEETERNITY PRIVATE LIMITED PRODUCT</div></section><section className="login-panel"><div className="login-form-wrap"><div className="login-icon"><ShieldCheck size={22} /></div><p className="eyebrow">SECURE STAFF ACCESS</p><h2>Welcome back</h2><p className="login-hint">Sign in with your hospital account to continue.</p><form onSubmit={onSubmit} className="form-stack"><label>Username<input name="username" autoComplete="username" required minLength={3} placeholder="Your username" /></label><label>Password<input name="password" type="password" autoComplete="current-password" required placeholder="Your password" /></label><button className="button button-primary button-full" type="submit">Sign in securely <ArrowUpRight size={16} /></button></form><p className="login-help">Need access? Contact your hospital administrator.</p></div><footer>Protected by role-based access controls <span>·</span> © 2026 Radiant Hospitals</footer></section>{toast && <ToastMessage toast={toast} onDismiss={onDismissToast} />}</main>;
+}
+
+function ToastMessage({ toast, onDismiss }: { toast: Toast; onDismiss: () => void }) {
+  return <div className={`toast toast-${toast.kind}`} role="status" aria-live="polite">{toast.kind === "success" ? <Check size={17} /> : <X size={17} />}<span>{toast.message}</span><button aria-label="Dismiss notification" onClick={onDismiss}><X size={15} /></button></div>;
 }
 
 function Overview({ patients, doctors, appointments, invoices, todayAppointments, unpaidTotal, canCreateAppointment, onNavigate, onCreateAppointment }: { patients: Patient[]; doctors: Doctor[]; appointments: Appointment[]; invoices: Invoice[]; todayAppointments: Appointment[]; unpaidTotal: number; canCreateAppointment: boolean; onNavigate: (view: View) => void; onCreateAppointment: () => void }) {
@@ -186,7 +224,7 @@ function Overview({ patients, doctors, appointments, invoices, todayAppointments
   const scheduleAction = canCreateAppointment ? <button className="button button-small button-outline" onClick={onCreateAppointment}><Plus size={15} /> Create appointment</button> : undefined;
   return <>
     <div className="stats-grid"><StatCard label="Registered patients" value={patients.length.toLocaleString("en-IN")} note="Across all records" icon={UsersRound} tone="mint" trend="Patient registry" /><StatCard label="Today’s appointments" value={todayAppointments.length.toString().padStart(2, "0")} note={`${appointments.filter((item) => item.status === "Pending").length} awaiting review`} icon={CalendarDays} tone="blue" trend="OPD + IPD" /><StatCard label="Active care" value={active.toString().padStart(2, "0")} note="Currently in progress" icon={Activity} tone="coral" trend="Live census" /><StatCard label="Outstanding" value={money(unpaidTotal)} note={`${invoices.filter((item) => item.payment_status === "Unpaid").length} unpaid invoices`} icon={BadgeIndianRupee} tone="gold" trend="Accounts receivable" /></div>
-    <div className="overview-grid"><section className="panel schedule-panel"><div className="panel-heading"><div><span className="panel-kicker">CARE COORDINATION</span><h2>Upcoming appointments</h2></div><button className="text-link" onClick={() => onNavigate("appointments")}>View schedule <ArrowUpRight size={15} /></button></div>{recent.length ? <div className="appointment-list">{recent.map((item) => <AppointmentRow key={item.id} item={item} />)}</div> : <EmptyState icon={CalendarDays} title="No appointments yet" copy="Add an appointment to start coordinating care." action={scheduleAction} />}</section><section className="panel snapshot-panel"><div className="panel-heading"><div><span className="panel-kicker">HOSPITAL SNAPSHOT</span><h2>Today at a glance</h2></div><span className="snapshot-date">{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date())}</span></div><div className="snapshot-list"><SnapshotLine icon={Clock3} label="Appointments today" value={String(todayAppointments.length).padStart(2, "0")} /><SnapshotLine icon={Stethoscope} label="Available clinicians" value={String(doctors.length).padStart(2, "0")} /><SnapshotLine icon={ClipboardList} label="Pending requests" value={String(appointments.filter((item) => item.status === "Pending").length).padStart(2, "0")} />{canCreateAppointment && <SnapshotLine icon={FileText} label="Invoices issued" value={String(invoices.length).padStart(2, "0")} />}</div><button className="snapshot-footer" onClick={() => onNavigate("doctors")}>Explore care team <ArrowUpRight size={15} /></button></section></div>
+    <div className="overview-grid"><section className="panel schedule-panel"><div className="panel-heading"><div><span className="panel-kicker">CARE COORDINATION</span><h2>Upcoming appointments</h2></div><button className="text-link" onClick={() => onNavigate("appointments")}>View schedule <ArrowUpRight size={15} /></button></div>{recent.length ? <div className="appointment-list">{recent.map((item) => <AppointmentRow key={item.id} item={item} />)}</div> : <EmptyState icon={CalendarDays} title="No appointments yet" copy="Add an appointment to start coordinating care." action={scheduleAction} />}</section><section className="panel snapshot-panel"><div className="panel-heading"><div><span className="panel-kicker">HOSPITAL SNAPSHOT</span><h2>Today at a glance</h2></div><span className="snapshot-date">{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short" }).format(new Date())}</span></div><div className="snapshot-list"><SnapshotLine icon={Clock3} label="Appointments today" value={String(todayAppointments.length).padStart(2, "0")} /><SnapshotLine icon={Stethoscope} label="Available clinicians" value={String(doctors.filter((doctor) => doctor.is_active).length).padStart(2, "0")} /><SnapshotLine icon={ClipboardList} label="Pending requests" value={String(appointments.filter((item) => item.status === "Pending").length).padStart(2, "0")} />{canCreateAppointment && <SnapshotLine icon={FileText} label="Invoices issued" value={String(invoices.length).padStart(2, "0")} />}</div><button className="snapshot-footer" onClick={() => onNavigate("doctors")}>Explore care team <ArrowUpRight size={15} /></button></section></div>
     <section className="panel attention-panel"><div className="attention-icon"><ShieldCheck size={19} /></div><div><strong>Every record, handled with care.</strong><p>Patient information is protected by role-based access. Only authorized hospital staff can view or update records.</p></div><span className="attention-label">SECURE OPERATIONS</span></section>
   </>;
 }
@@ -202,8 +240,8 @@ function PatientsView({ patients, search, onSearch, loading }: { patients: Patie
   return <section className="panel table-panel"><div className="table-toolbar"><div className="result-count"><strong>{patients.length}</strong> patient records</div><label className="search-field"><Search size={16} /><input value={search} onChange={(event) => onSearch(event.target.value)} placeholder="Search name, patient ID, contact" aria-label="Search patients" />{search && <button aria-label="Clear search" onClick={() => onSearch("")}><X size={14} /></button>}</label></div><div className="table-scroll"><table><thead><tr><th>Patient</th><th>Patient ID</th><th>Age / gender</th><th>Contact</th><th>Registered</th></tr></thead><tbody>{patients.map((patient) => <tr key={patient.id}><td><div className="table-person"><span className="person-avatar">{patient.full_name.split(" ").map((part) => part[0]).slice(0, 2).join("")}</span><div><strong>{patient.full_name}</strong><small>{patient.address}</small></div></div></td><td><span className="record-id">{patient.unique_patient_id}</span></td><td>{patient.age} yrs <span className="muted-dot">·</span> {patient.gender}</td><td>{patient.contact}</td><td>{new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date(patient.created_at))}</td></tr>)}</tbody></table>{!patients.length && <EmptyState icon={UsersRound} title={loading ? "Loading patient records" : search ? "No matching patients" : "Your registry is ready"} copy={loading ? "Fetching the latest records." : search ? "Try a different name, patient ID or contact number." : "New registrations will appear here."} />}</div></section>;
 }
 
-function DoctorsView({ doctors, appointments }: { doctors: Doctor[]; appointments: Appointment[] }) {
-  return <div className="doctor-grid">{doctors.map((doctor, index) => { const count = appointments.filter((item) => item.doctor_id === doctor.id && item.status !== "Cancelled").length; return <article className="doctor-card" key={doctor.id}><div className={`doctor-art doctor-art-${index % 4}`}><span className="doctor-monogram">{doctor.full_name.split(" ").filter(Boolean).slice(-1)[0]?.slice(0, 1) ?? "D"}</span><span className="doctor-availability"><i /> On staff</span></div><div className="doctor-info"><p className="doctor-department">{doctor.department}</p><h2>{doctor.full_name}</h2><p className="doctor-specialty">{doctor.specialization}</p><div className="doctor-meta"><span><CalendarDays size={15} /> {count} appointments</span><strong>{money(doctor.consultation_fee)} <small>/ visit</small></strong></div>{doctor.availability_schedule && <p className="doctor-schedule">{doctor.availability_schedule}</p>}</div></article>; })}{!doctors.length && <EmptyState icon={Stethoscope} title="No clinicians listed" copy="An administrator can create doctor accounts from user management." />}</div>;
+function DoctorsView({ doctors, appointments, canManage, onChangeStatus }: { doctors: Doctor[]; appointments: Appointment[]; canManage: boolean; onChangeStatus: (doctor: Doctor) => void }) {
+  return <div className="doctor-grid">{doctors.map((doctor, index) => { const count = appointments.filter((item) => item.doctor_id === doctor.id && item.status !== "Cancelled").length; return <article className={`doctor-card ${doctor.is_active ? "" : "doctor-card-inactive"}`} key={doctor.id}><div className={`doctor-art doctor-art-${index % 4}`}><span className="doctor-monogram">{doctor.full_name.split(" ").filter(Boolean).slice(-1)[0]?.slice(0, 1) ?? "D"}</span><span className={`doctor-availability ${doctor.is_active ? "" : "doctor-availability-inactive"}`}><i /> {doctor.is_active ? "Active" : "Deactivated"}</span></div><div className="doctor-info"><p className="doctor-department">{doctor.department}</p><h2>{doctor.full_name}</h2><p className="doctor-specialty">{doctor.specialization}</p><p className="doctor-account">Login: <strong>{doctor.username}</strong></p><div className="doctor-meta"><span><CalendarDays size={15} /> {count} appointments</span><strong>{money(doctor.consultation_fee)} <small>/ visit</small></strong></div>{doctor.availability_schedule && <p className="doctor-schedule">{doctor.availability_schedule}</p>}{canManage && <button className="button button-small button-quiet doctor-action" onClick={() => onChangeStatus(doctor)}>{doctor.is_active ? <><UserMinus size={15} /> Deactivate account</> : <><UserCheck size={15} /> Reactivate account</>}</button>}</div></article>; })}{!doctors.length && <EmptyState icon={Stethoscope} title="No clinicians listed" copy={canManage ? "Add a doctor to create their staff account." : "An administrator can add doctors to the care team."} />}</div>;
 }
 
 function AppointmentsView({ appointments, onStatus }: { appointments: Appointment[]; onStatus: (id: number, status: EncounterStatus) => Promise<void> }) {
@@ -220,9 +258,9 @@ function BillingView({ invoices, onStatus }: { invoices: Invoice[]; onStatus: (i
 
 function EmptyState({ icon: Icon, title, copy, action }: { icon: typeof Activity; title: string; copy: string; action?: React.ReactNode }) { return <div className="empty-state"><span className="empty-icon"><Icon size={20} /></span><strong>{title}</strong><p>{copy}</p>{action}</div>; }
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) { useEffect(() => { const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey); }, [onClose]); return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header><div><p className="eyebrow">RADIANT HOSPITALS</p><h2 id="modal-title">{title}</h2></div><button className="icon-button" aria-label="Close dialog" onClick={onClose}><X size={19} /></button></header>{children}</section></div>; }
-function modalTitle(kind: "patient" | "appointment" | "invoice") { return ({ patient: "Register a patient", appointment: "Schedule appointment", invoice: "Create invoice" })[kind]; }
+function modalTitle(kind: "patient" | "appointment" | "invoice" | "doctor") { return ({ patient: "Register a patient", appointment: "Schedule appointment", invoice: "Create invoice", doctor: "Add a doctor" })[kind]; }
 
-function ModalForm({ kind, patients, doctors, onSaved, onError }: { kind: "patient" | "appointment" | "invoice"; patients: Patient[]; doctors: Doctor[]; onSaved: (message: string) => Promise<void>; onError: (message: string) => void }) {
+function ModalForm({ kind, patients, doctors, onSaved, onError }: { kind: "patient" | "appointment" | "invoice" | "doctor"; patients: Patient[]; doctors: Doctor[]; onSaved: (message: string) => Promise<void>; onError: (message: string) => void }) {
   const [saving, setSaving] = useState(false);
   const [type, setType] = useState<EncounterType>("OPD");
   const [total, setTotal] = useState("");
@@ -235,8 +273,11 @@ function ModalForm({ kind, patients, doctors, onSaved, onError }: { kind: "patie
     const form = new FormData(event.currentTarget);
     try {
       if (kind === "patient") {
-        await api.createPatient({ full_name: String(form.get("full_name")), age: Number(form.get("age")), gender: String(form.get("gender")) as Gender, contact: String(form.get("contact")), address: String(form.get("address")), medical_history: String(form.get("medical_history") ?? "") });
-        await onSaved("Patient registered successfully");
+        const patient = await api.createPatient({ full_name: String(form.get("full_name")), age: Number(form.get("age")), gender: String(form.get("gender")) as Gender, contact: String(form.get("contact")), address: String(form.get("address")), medical_history: String(form.get("medical_history") ?? "") });
+        await onSaved(`Patient registered successfully · Patient ID: ${patient.unique_patient_id}`);
+      } else if (kind === "doctor") {
+        const doctor = await api.createDoctor({ full_name: String(form.get("full_name")), username: String(form.get("username")), password: String(form.get("password")), department: String(form.get("department")), specialization: String(form.get("specialization")), consultation_fee: Number(form.get("consultation_fee")), availability_schedule: String(form.get("availability_schedule") ?? "") });
+        await onSaved(`Doctor account created successfully · Doctor ID: ${doctor.id} · Login: ${doctor.username}`);
       } else if (kind === "appointment") {
         await api.createAppointment({ patient_id: Number(form.get("patient_id")), doctor_id: Number(form.get("doctor_id")), type, appointment_datetime: new Date(String(form.get("appointment_datetime"))).toISOString(), bed_allocation: type === "IPD" ? String(form.get("bed_allocation")) : undefined });
         await onSaved("Appointment scheduled successfully");
@@ -253,9 +294,10 @@ function ModalForm({ kind, patients, doctors, onSaved, onError }: { kind: "patie
 
   return <form className="form-stack modal-form" onSubmit={submit}>
     {kind === "patient" && <><div className="form-grid"><label>Full name<input name="full_name" required minLength={2} maxLength={160} placeholder="Patient full name" /></label><label>Age<input name="age" type="number" required min={0} max={130} placeholder="Age in years" /></label></div><div className="form-grid"><label>Gender<select name="gender" required defaultValue=""><option value="" disabled>Select gender</option>{GENDERS.map((gender) => <option key={gender}>{gender}</option>)}</select></label><label>Contact number<input name="contact" required minLength={5} maxLength={32} placeholder="Phone number" /></label></div><label>Address<input name="address" required minLength={3} maxLength={300} placeholder="Street, city, postal code" /></label><label>Medical history <span className="optional">OPTIONAL</span><textarea name="medical_history" rows={3} maxLength={10000} placeholder="Relevant history, allergies or notes" /></label></>}
-    {kind === "appointment" && <><label>Patient<select name="patient_id" required defaultValue=""><option value="" disabled>Select patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name} · {patient.unique_patient_id}</option>)}</select></label><label>Doctor<select name="doctor_id" required defaultValue=""><option value="" disabled>Select doctor</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name} · {doctor.department}</option>)}</select></label><div className="form-grid"><label>Encounter type<select value={type} onChange={(event) => setType(event.target.value as EncounterType)}><option>OPD</option><option>IPD</option></select></label><label>Date and time<input name="appointment_datetime" type="datetime-local" required min={new Date().toISOString().slice(0, 16)} /></label></div>{type === "IPD" && <label>Bed allocation<input name="bed_allocation" required maxLength={40} placeholder="Ward / room / bed" /></label>}</>}
+    {kind === "doctor" && <><div className="form-grid"><label>Doctor name<input name="full_name" required minLength={2} maxLength={160} placeholder="Full name" /></label><label>Username<input name="username" required minLength={3} maxLength={80} autoComplete="off" placeholder="Login username" /></label></div><div className="form-grid"><label>Initial password<input name="password" type="password" required minLength={12} maxLength={128} autoComplete="new-password" placeholder="At least 12 characters" /></label><label>Department<input name="department" required minLength={2} maxLength={120} placeholder="e.g. Cardiology" /></label></div><div className="form-grid"><label>Specialization<input name="specialization" required minLength={2} maxLength={120} placeholder="e.g. Cardiology" /></label><label>Consultation fee (INR)<input name="consultation_fee" type="number" min="0" step="0.01" required placeholder="0.00" /></label></div><label>Availability schedule <span className="optional">OPTIONAL</span><textarea name="availability_schedule" rows={2} maxLength={4000} placeholder="e.g. Monday to Friday, 9 AM to 1 PM" /></label><p className="form-note">Share the username and initial password with the doctor securely.</p></>}
+    {kind === "appointment" && <><label>Patient<select name="patient_id" required defaultValue=""><option value="" disabled>Select patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name} · {patient.unique_patient_id}</option>)}</select></label><label>Doctor<select name="doctor_id" required defaultValue=""><option value="" disabled>Select doctor</option>{doctors.filter((doctor) => doctor.is_active).map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.full_name} · {doctor.department}</option>)}</select></label><div className="form-grid"><label>Encounter type<select value={type} onChange={(event) => setType(event.target.value as EncounterType)}><option>OPD</option><option>IPD</option></select></label><label>Date and time<input name="appointment_datetime" type="datetime-local" required min={new Date().toISOString().slice(0, 16)} /></label></div>{type === "IPD" && <label>Bed allocation<input name="bed_allocation" required maxLength={40} placeholder="Ward / room / bed" /></label>}</>}
     {kind === "invoice" && <><label>Patient<select name="patient_id" required defaultValue=""><option value="" disabled>Select patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.full_name} · {patient.unique_patient_id}</option>)}</select></label><div className="form-grid"><label>Total amount (INR)<input name="total" type="number" min="0" step="0.01" required value={total} onChange={(event) => setTotal(event.target.value)} placeholder="0.00" /></label><label>Discount (INR)<input name="discount" type="number" min="0" step="0.01" max={total || 0} required value={discount} onChange={(event) => setDiscount(event.target.value)} placeholder="0.00" /></label></div><div className="invoice-total"><span>AMOUNT DUE</span><strong>{money(final)}</strong></div><label>Payment status<select name="payment_status"><option>Unpaid</option><option>Paid</option></select></label></>}
-    <div className="modal-actions"><button className="button button-quiet" type="button" onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))}>Cancel</button><button className="button button-primary" disabled={saving || (kind !== "patient" && !patients.length) || (kind === "appointment" && !doctors.length)} type="submit">{saving ? "Saving…" : kind === "patient" ? "Register patient" : kind === "appointment" ? "Schedule appointment" : "Create invoice"}</button></div>
-    {kind !== "patient" && !patients.length && <p className="form-note">Register a patient before creating this record.</p>}
+    <div className="modal-actions"><button className="button button-quiet" type="button" onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))}>Cancel</button><button className="button button-primary" disabled={saving || ((kind === "appointment" || kind === "invoice") && !patients.length) || (kind === "appointment" && !doctors.some((doctor) => doctor.is_active))} type="submit">{saving ? "Saving…" : kind === "patient" ? "Register patient" : kind === "appointment" ? "Schedule appointment" : kind === "doctor" ? "Create doctor account" : "Create invoice"}</button></div>
+    {(kind === "appointment" || kind === "invoice") && !patients.length && <p className="form-note">Register a patient before creating this record.</p>}
   </form>;
 }

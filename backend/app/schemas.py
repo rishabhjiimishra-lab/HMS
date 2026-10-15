@@ -27,6 +27,7 @@ class UserResponse(ORMModel):
     username: str
     role: UserRole
     created_at: datetime
+    is_active: bool
 
 
 class LoginRequest(BaseModel):
@@ -102,6 +103,7 @@ class DoctorResponse(ORMModel):
     specialization: str
     consultation_fee: Decimal
     availability_schedule: str
+    is_active: bool
 
 
 class AppointmentCreate(BaseModel):

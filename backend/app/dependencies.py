@@ -29,7 +29,7 @@ def get_current_user(
         raise unauthorized from exc
 
     user = db.query(User).filter(User.username == username).first()
-    if user is None:
+    if user is None or not user.is_active:
         raise unauthorized
     return user
 

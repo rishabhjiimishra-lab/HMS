@@ -9,6 +9,7 @@ export interface User {
   username: string;
   role: Role;
   created_at?: string;
+  is_active: boolean;
 }
 
 export interface Patient {
@@ -32,6 +33,7 @@ export interface Doctor {
   specialization: string;
   consultation_fee: string;
   availability_schedule: string;
+  is_active: boolean;
 }
 
 export interface Appointment {

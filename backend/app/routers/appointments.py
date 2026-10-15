@@ -14,7 +14,8 @@ STAFF = (UserRole.ADMIN, UserRole.RECEPTIONIST)
 
 def appointment_query(db: Session):
     return db.query(Appointment).options(
-        joinedload(Appointment.patient), joinedload(Appointment.doctor).joinedload(Doctor.user)
+        joinedload(Appointment.patient),
+        joinedload(Appointment.doctor).joinedload(Doctor.user).joinedload(User.deactivation),
     )
 
 
@@ -57,7 +58,13 @@ def create_appointment(
         raise HTTPException(status_code=422, detail="OPD encounters cannot have a bed allocation")
     if db.get(Patient, payload.patient_id) is None:
         raise HTTPException(status_code=404, detail="Patient not found")
-    if db.get(Doctor, payload.doctor_id) is None:
+    doctor = (
+        db.query(Doctor)
+        .options(joinedload(Doctor.user).joinedload(User.deactivation))
+        .filter(Doctor.id == payload.doctor_id)
+        .first()
+    )
+    if doctor is None or not doctor.user.is_active:
         raise HTTPException(status_code=404, detail="Doctor not found")
     appointment = Appointment(**payload.model_dump())
     if appointment.appointment_datetime.tzinfo is None:
@@ -89,8 +96,15 @@ def update_appointment(
     changes = payload.model_dump(exclude_unset=True)
     if changes.get("patient_id") and db.get(Patient, changes["patient_id"]) is None:
         raise HTTPException(status_code=404, detail="Patient not found")
-    if changes.get("doctor_id") and db.get(Doctor, changes["doctor_id"]) is None:
-        raise HTTPException(status_code=404, detail="Doctor not found")
+    if changes.get("doctor_id"):
+        doctor = (
+            db.query(Doctor)
+            .options(joinedload(Doctor.user).joinedload(User.deactivation))
+            .filter(Doctor.id == changes["doctor_id"])
+            .first()
+        )
+        if doctor is None or not doctor.user.is_active:
+            raise HTTPException(status_code=404, detail="Doctor not found")
     resulting_type = changes.get("type", appointment.type)
     resulting_bed = changes.get("bed_allocation", appointment.bed_allocation)
     if resulting_type == EncounterType.IPD and not resulting_bed:

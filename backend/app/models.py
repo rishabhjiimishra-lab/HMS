@@ -57,6 +57,18 @@ class User(TimestampMixin, Base):
         SqlEnum(UserRole, native_enum=False, length=20), nullable=False
     )
     doctor: Mapped["Doctor | None"] = relationship(back_populates="user", uselist=False)
+    deactivation: Mapped["UserDeactivation | None"] = relationship(back_populates="user", uselist=False)
+
+    @property
+    def is_active(self) -> bool:
+        return self.deactivation is None
+
+
+class UserDeactivation(Base):
+    __tablename__ = "user_deactivations"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user: Mapped[User] = relationship(back_populates="deactivation")
 
 
 class Patient(TimestampMixin, Base):
@@ -94,6 +106,10 @@ class Doctor(TimestampMixin, Base):
     @property
     def username(self) -> str:
         return self.user.username
+
+    @property
+    def is_active(self) -> bool:
+        return self.user.is_active
 
 
 class Appointment(TimestampMixin, Base):
